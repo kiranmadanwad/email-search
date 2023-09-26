@@ -165,19 +165,26 @@ Configure data compression and compaction settings for efficient storage and que
 
 
 ### Redis Cache
-- Using Redis for Caching in Email Search:
-- Cache Strategy: Determine which email records should be cached. For example, you might want to cache frequently searched emails or frequently accessed domains.
+- **Using Redis for Caching in Email Search**:
 
-- Cache Key Design: Define a cache key structure that uniquely identifies the data you want to cache. In this case, it might be based on email IDs or domains. For example:
+- **Cache Strategy**:
+  -  Determine which email records should be cached. For example, you might want to cache frequently searched emails or frequently accessed domains.
 
-- Cache email records by email ID: email:id:<email_id>
-- Cache email records by domain: email:domain:<domain>
-- Cache Population: When performing a search query, first check if the data is available in the Redis cache using the cache key. If it's present, retrieve the data from Redis and return it. If not, fetch the data from Cassandra, store it in Redis, and return it to the client.
+- **Cache Key Design**:
+     - Define a cache key structure that uniquely identifies the data you want to cache. In this case, it might be based on email IDs or domains. For example:
 
-- Cache Expiration: Consider setting an expiration time for cached data based on how frequently your data changes. For email data that rarely changes, you can cache it for a longer duration to maximize cache hits.
+- **Cache email records by email ID**: email :id:<email_id>
+- **Cache email records by domain**: email:domain:<domain>
+
+- **Cache Population**:
+     - When performing a search query, first check if the data is available in the Redis cache using the cache key. If it's present, retrieve the data from Redis and return it. If not, fetch the data from Cassandra, store it in Redis, and return it to the client.
+
+- **Cache Expiration**:
+     -  Consider setting an expiration time for cached data based on how frequently your data changes. For email data that rarely changes, you can cache it for a longer duration to maximize cache hits.
 Specify eviction policies (e.g., LRU, LFU) and set the maximum cache size.
 
-- Cache Invalidation: Implement cache invalidation strategies to ensure that cached data is updated when it changes in the Cassandra database. This can be done by deleting or updating the corresponding cache keys when data is modified.
+- **Cache Invalidation**:
+     -  Implement cache invalidation strategies to ensure that cached data is updated when it changes in the Cassandra database. This can be done by deleting or updating the corresponding cache keys when data is modified.
 
 By using Redis as a caching mechanism in this way, we can reduce the load on your Cassandra cluster and significantly improve the speed of email search queries, especially for frequently accessed data. Redis' in-memory storage and efficient caching mechanisms make it well-suited for this purpose.
 
