@@ -18,6 +18,25 @@ The email search application aims to provide fast email search functionality wit
 ## System Architecture
 The architecture consists of several key components:
 ![HLD](https://github.com/kiranmadanwad/email-search/assets/29003308/83dfbc98-5d86-4f56-a26f-c3be44a1eeca)
+
+ * **Kubernetes Cluster** - All services would run on a managed K8 cluster with multiple pods and scaling enabled with k8 configuration. 
+ * **Kubernetes Ingress/loadbalancer** - K8 ingress and loadbalancers would be used to forward the request to respective services and load balance the requests
+ * **Redis Cache** - A managed redis cache to be used for fast retrieval of the frequently searched emails
+ * **Cassandra DB** - Managed Cassandra DB to be used from scaling and networking standpoint. 
+ * **Application servers/services** - A microservice based approach to be used to separate the responsibility of each service 
+     * **Email publisher service** - This service will be responsible for ingesting the in coming email data to a kafka topic. The publishing part could also be multi threaded service which would do a parallel processing of publish events to kafka
+     * **Email consumer service**  - This service would register multiple consumers to the topic where publisher service is ingesting the email data and then process it to store in cassandra db as a multi threaded application.
+     * **Email search executer service** - This service would specifically deal only with the search operations. First it will try to read from the redis cache if not found then read from DB and update the cache. Update cache could be a async call since we want to return the result first.
+    
+
+* **NOTE** : Some assumes made in this design are: 
+  
+  - Considering the email ingestion is done through some other service which could or could not be part of the same K8 cluster and may also not be part of the application's ecosystem
+  - Search requests are done through either a service or web applications 
+    
+
+
+
 ### Load Balancer
 - Kubernetes can be an excellent choice for handling load balancing in a scalable and containerized environment. Kubernetes provides a built-in solution for load balancing through its service abstraction. Here's how we can use Kubernetes for load balancing in this email/domain search system:
 
@@ -26,17 +45,18 @@ Kubernetes Services are used to expose applications running inside the cluster t
 
 - To use Kubernetes for load balancing, we can:
 
-  a. Deploy Application Pods:
-  Deploy Spring Boot-based or python flask application servers as pods within your Kubernetes cluster. Ensure that your application is containerized, and you have a Docker image for it.
+  a. **Deploy Application Pods**:  
+  - Deploy Spring Boot-based or python flask application servers as pods within your Kubernetes cluster.
+  - Ensure that application is containerized, and you have a Docker image for it.
   
-  b. Create a Kubernetes Service:
-  Define a Kubernetes Service that targets your application pods. You can create a service of type LoadBalancer to enable external access to your application.
+  b. **Create a Kubernetes Service**:  
+  - Define a Kubernetes Service that targets application pods. We can create a service of type LoadBalancer to enable external access to your application.
 
 ```yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: my-app-service
+  name: email-search-executer-service
 spec:
   selector:
     app: my-app
@@ -46,23 +66,25 @@ spec:
       targetPort: 8080
   type: LoadBalancer
 ```
-In this example:
-
-selector specifies which pods the service should target. Ensure that application pods have the appropriate labels (app: my-app in this case).
+ * 
+    Here selector specifies which pods the service should target. Ensure that application pods have the appropriate labels (app: email-search-executer-service in this case).
 ports define the port mapping between the service and the pods.
 type is set to LoadBalancer, which instructs Kubernetes to create a cloud load balancer or use an internal load balancer to distribute traffic to your pods.
 
-  c. Load Balancing Configuration:
-  The load balancer created by Kubernetes will distribute incoming traffic to the pods behind it. The specific load balancing algorithm used depends on the underlying cloud provider's capabilities.
+  c. **Load Balancing Configuration**:
   
-  d. Expose the Load Balancer:
-  Once the service is created with type LoadBalancer, Kubernetes will interact with the cloud provider's load balancing service to create an external IP or DNS name. Clients can then access application using this IP or DNS.
+-   The load balancer created by Kubernetes will distribute incoming traffic to the pods behind it. The specific load balancing algorithm used depends on the underlying cloud provider's capabilities.
+  
+  d. **Expose the Load Balancer**:
+  
+-   Once the service is created with type LoadBalancer, Kubernetes will interact with the cloud provider's load balancing service to create an external IP or DNS name. Clients can then access application using this IP or DNS.
 
 ### Cassandra Cluster
 - Stores email data with efficient data modeling and partitioning.
 - Cassandra Configuration:
 Set the cassandra.yaml file for cluster settings, including node configuration, data directory, and heap size.
 Data Replication:
+
 Define replication strategies and factors to ensure data durability and high availability.
 Example (Cassandra CQL):
 ```sql
@@ -114,7 +136,9 @@ Optimization Techniques:
 sql
 SELECT * FROM email_records WHERE domain = 'example.com' LIMIT 10;
 ```
-Partitioning Strategy: domain-based partitioning. Each unique email domain will be a partition key, and all email records for that domain will be stored together within that partition.
+**Partitioning Strategy**: 
+
+- domain-based partitioning. Each unique email domain will be a partition key, and all email records for that domain will be stored together within that partition.
 
 Data Model:
 ```
@@ -135,7 +159,9 @@ Each unique domain will have its own partition.
 All email records for a specific domain will be stored together within that partition.
 Cassandra will automatically distribute these partitions across the nodes in the cluster.
 
-Compression and Compaction: Configure data compression and compaction settings for efficient storage and query performance.
+**Compression and Compaction**: 
+
+Configure data compression and compaction settings for efficient storage and query performance.
 
 
 ### Redis Cache
@@ -158,25 +184,26 @@ By using Redis as a caching mechanism in this way, we can reduce the load on you
 ### Kafka Queue
 - To make data ingestion from Kafka parallel and optimize the entire process, we can implement parallelism at various levels in our data pipeline. Parallel processing allows us to handle larger volumes of data more efficiently, which can help maintain sub-300ms response times for email search. Here are some strategies for achieving parallelism in data ingestion from Kafka:
 
-- Kafka Consumer Groups:
+- **Kafka Consumer Groups**:
 
-- Use Kafka Consumer Groups: Kafka allows you to create consumer groups with multiple consumer instances. Each instance in a consumer group can process data in parallel from different Kafka partitions.
+    - Use Kafka Consumer Groups: Kafka allows you to create consumer groups with multiple consumer instances. Each instance in a consumer group can process data in parallel from different Kafka partitions.
 
-- Increase the number of consumer instances: By adding more consumer instances to a consumer group, you can parallelize the processing of data from multiple partitions. Ensure that the number of consumer instances matches the number of partitions in your Kafka topic for optimal parallelism.
+- **Increase the number of consumer instances**:
+  - By adding more consumer instances to a consumer group, you can parallelize the processing of data from multiple partitions. Ensure that the number of consumer instances matches the number of partitions in your Kafka topic for optimal parallelism.
 
-- Parallel Message Processing:
+- **Parallel Message Processing**:
+  - Implement parallel processing within each consumer instance: Each Kafka message can be processed in parallel using multi-threading or multiprocessing within your consumer code. This can be especially useful if processing a single message involves complex operations.
 
-Implement parallel processing within each consumer instance: Each Kafka message can be processed in parallel using multi-threading or multiprocessing within your consumer code. This can be especially useful if processing a single message involves complex operations.
+- **Use worker pools**:
+  - Consider using worker pools to distribute Kafka message processing across multiple worker threads or processes.
 
-- Use worker pools: Consider using worker pools to distribute Kafka message processing across multiple worker threads or processes.
+- **Batch Processing**:
+  - Process messages in batches: Instead of processing one message at a time, collect a batch of messages and process them together. This reduces the overhead of message handling and can improve throughput.
 
-- Batch Processing:
-
-- Process messages in batches: Instead of processing one message at a time, collect a batch of messages and process them together. This reduces the overhead of message handling and can improve throughput.
-
-Adjust the batch size: Experiment with different batch sizes to find the optimal trade-off between throughput and processing latency.
+- **Adjust the batch size**:
+  - Experiment with different batch sizes to find the optimal trade-off between throughput and processing latency.
 ### Application Servers
-- Develop Spring Boot microservices responsible for handling search queries.
+- Develop (Spring Boot/python flask) microservices responsible for handling search queries.
 - Implement parallel search processing by dividing the search workload into tasks handled by multiple threads or processes.
 - Use connection pooling to efficiently manage connections to the Cassandra database.
 - Implement error handling and retries for resilience.
@@ -184,19 +211,23 @@ Adjust the batch size: Experiment with different batch sizes to find the optimal
 
 ## Backup and Disaster Recovery
 - Handling disaster recovery for your email search application, especially when using managed services like Cassandra and Redis in a Kubernetes environment, is essential to ensure the continuity of your service. Here are steps and strategies to implement a robust disaster recovery plan:
-- Data Backup and Replication:
+- **Data Backup and Replication**:
   
-  a. Cassandra: Set up regular backups of your Cassandra data. Most managed Cassandra services provide automated backup and restore functionality. Ensure backups are taken at frequent intervals and stored securely. Implement Cassandra's built-in replication features, such as replication factor and data center replication, to ensure data redundancy across multiple nodes and data centers. This helps prevent data loss in the event of a node or data center failure.
+  a. **Cassandra**:
+  - Set up regular backups of your Cassandra data. Most managed Cassandra services provide automated backup and restore functionality. Ensure backups are taken at frequent intervals and stored securely. Implement Cassandra's built-in replication features, such as replication factor and data center replication, to ensure data redundancy across multiple nodes and data centers. This helps prevent data loss in the event of a node or data center failure.
 
-  b. Redis Cache: Configure Redis to take snapshots of your data at regular intervals. You can use Redis' persistence options like RDB snapshots and AOF logs.Consider using Redis' replication feature to replicate data to multiple Redis instances or clusters. This provides data redundancy and high availability.
+  b. **Redis Cache**:
+  - Configure Redis to take snapshots of your data at regular intervals. You can use Redis' persistence options like RDB snapshots and AOF logs.Consider using Redis' replication feature to replicate data to multiple Redis instances or clusters. This provides data redundancy and high availability.
 
-- Data Recovery and Failover:
+- **Data Recovery and Failover**:
   
-  a. Cassandra: Set up a disaster recovery site with a secondary Cassandra cluster in a different region or data center. Use asynchronous replication to replicate data to the secondary cluster.
+  a. **Cassandra**:
+  - Set up a disaster recovery site with a secondary Cassandra cluster in a different region or data center. Use asynchronous replication to replicate data to the secondary cluster.
 In the event of a primary cluster failure, switch traffic to the secondary cluster. Ensure that your application can automatically detect the primary cluster's unavailability and fail over to the secondary cluster.
 
-  b. Redis Cache: Implement Redis Sentinel or Redis Cluster for high availability and automatic failover. These features monitor Redis instances and promote a replica to the primary role if the primary instance fails.
+  b. **Redis Cache**:
+  - Implement Redis Sentinel or Redis Cluster for high availability and automatic failover. These features monitor Redis instances and promote a replica to the primary role if the primary instance fails.
 Consider implementing a read-only replica in a different region to improve read performance and minimize latency in case of a failover.
 
 ## Conclusion
-The email search application's architecture and strategies, including efficient data modeling, caching, monitoring, and disaster recovery planning, collectively contribute to achieving the 300ms response time target, ensuring a responsive and reliable user experience.
+The email search application's architecture and strategies, including efficient data modeling, caching, monitoring, and disaster recovery planning, collectively contribute to achieving the ~300ms response time target, ensuring a responsive and reliable user experience.
